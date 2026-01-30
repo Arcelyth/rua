@@ -20,12 +20,19 @@ pub struct CLI {}
 impl CLI {
     pub fn run() {
         let args = Args::parse();
-        let img = RuaImage::from_path(args.path, args.width, args.detail, args.color);
-        let output = if args.color {
-            img.to_ascii_colorful()
-        } else {
-            img.to_ascii()
-        };
-        println!("{}", output);
+        match RuaImage::from_path(args.path, args.width, args.detail, args.color) {
+            Ok(img) => {
+                let output = if args.color {
+                    img.to_ascii_colorful()
+                } else {
+                    img.to_ascii()
+                };
+                println!("{}", output);
+            }
+            Err(e) => {
+                println!("Something is wrong!");
+                println!("[Error]: {:?}", e);
+            }
+        }         
     }
 }

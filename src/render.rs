@@ -1,5 +1,6 @@
 use image::{GenericImageView, DynamicImage};
 use image::imageops::FilterType; 
+use anyhow::{Context, Result};
 
 pub trait Renderable {
     fn to_ascii(&self) -> String; 
@@ -16,12 +17,13 @@ pub struct RuaImage {
 
 impl RuaImage {
 
-    pub fn from_path(path: String, width: u32, detail: bool, color: bool) -> Self {
-        let img = image::open(&path).expect("Failed to open file");
-        Self {
+    pub fn from_path(path: String, width: u32, detail: bool, color: bool) -> Result<Self> {
+        let img = image::open(&path)
+            .with_context(|| format!("Failed to open file: {path}"))?;
+        Ok(Self {
             image: img,
             width, detail, color
-        }
+        })
     }
 
     pub fn get_ascii_table(detail: bool) -> &'static str {
