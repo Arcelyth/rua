@@ -2,6 +2,14 @@
 
 A simple CLI tool to convert images into ascii art and print them on the console.
 
+## Install
+
+You can build **Rua** from source code:
+```bash
+cargo build --release
+cd target/debug
+```
+
 ## Usage 
 
 ```bash
