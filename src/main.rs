@@ -27,7 +27,7 @@ fn main() {
     let ratio = img_height as f32 / img_width as f32;
     let out_height = (ratio * out_width as f32 * 0.55) as u32;
     
-    let resized_img = img.resize_exact(out_width, out_height, FilterType::Nearest);
+    let resized_img = img.resize_exact(out_width, out_height, FilterType::Lanczos3);
     let gray_img = resized_img.grayscale().into_luma8();
 
     let mut ascii_art = String::new();
@@ -43,3 +43,5 @@ fn main() {
 
     print!("{}", ascii_art);
 }
+
+
