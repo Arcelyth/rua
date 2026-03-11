@@ -1,5 +1,7 @@
 mod render;
 
+mod sprite;
+
 mod cli;
 use cli::*;
 

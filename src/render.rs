@@ -53,7 +53,7 @@ impl Renderable for RuaImage {
             ascii.push(c);
 
             if (i as u32 + 1) % self.width == 0 {
-                ascii.push('\n');
+                ascii.push_str("\r\n");
             }
         }
        ascii 
@@ -85,7 +85,7 @@ impl Renderable for RuaImage {
                 let colored_char = format!("\x1b[38;2;{};{};{}m{}", r, g, b, c);
                 ascii.push_str(&colored_char);
             }
-            ascii.push_str("\x1b[0m\n");
+            ascii.push_str("\x1b[0m\r\n");
         }
         
         ascii
