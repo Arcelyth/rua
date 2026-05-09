@@ -1,13 +1,17 @@
 #![allow(dead_code)]
 
 use anyhow::{Context, Result};
+use std::fs::File;
+use std::io::{Write, BufWriter};
+use image::GenericImageView;
 use image::imageops::FilterType;
-use image::{DynamicImage, GenericImageView};
 use std::error::Error;
 
 // rua format
 // width height frame
-// frame_index, pos_x, pos_y, char, color
+// frame_index, pos_x, pos_y, char, r, g, b
+// frame_index, pos_x, pos_y, char, r, g, b
+// ...
 pub struct RuaSprite {
     width: u32,
     height: u32,
@@ -66,6 +70,33 @@ impl RuaSprite {
         })
     }
 
+    pub fn output_rua(&self, path: String) -> Result<(), Box<dyn Error>> {
+        let file = File::create(path)?;
+        let mut writer = BufWriter::new(file);
+
+        writeln!(writer, "{} {} {}", self.width, self.height, self.frame_num)?;
+
+        let pixels_per_frame = (self.width * self.height) as usize;
+
+        for (i, pixel_data) in self.frames.iter().enumerate() {
+            if let Some((ch, (r, g, b))) = pixel_data {
+                let frame_index = i / pixels_per_frame;
+                let local_index = i % pixels_per_frame;
+
+                let pos_y = local_index / (self.width as usize);
+                let pos_x = local_index % (self.width as usize);
+
+                writeln!(
+                    writer,
+                    "{}, {}, {}, {}, {}, {}, {}",
+                    frame_index, pos_x, pos_y, ch, r, g, b
+                )?;
+            }
+        }
+        writer.flush()?;
+        Ok(())
+    }
+
     pub fn to_string(&self, frame: u32) -> String {
         if frame > self.frame_num {
             return "".to_string();
@@ -79,7 +110,8 @@ impl RuaSprite {
                 let f = (frame - 1) * width * height;
                 if let Some(p) = self.frames[(f + (y * width + x)) as usize] {
                     let color = p.1;
-                    let colored_char = format!("\x1b[38;2;{};{};{}m{}", color.0, color.1, color.2, p.0);
+                    let colored_char =
+                        format!("\x1b[38;2;{};{};{}m{}", color.0, color.1, color.2, p.0);
                     out.push_str(&colored_char);
                 }
             }

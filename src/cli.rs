@@ -35,6 +35,9 @@ struct Args {
 
     #[arg(long, default_value = "10", requires = "sprite")]
     fps: u32,
+
+    #[arg(short, long)]
+    output: Option<String>,
 }
 
 pub struct CLI {}
@@ -59,6 +62,11 @@ impl CLI {
     fn handle_rua(args: &Args) -> Result<(), Box<dyn Error>> {
         let s = RuaSprite::from_img(args.path.clone(), args.width, 10.)?;
         println!("{}", s.to_string(1));
+        if let Some(n) = &args.output {
+            if let Err(_) = s.output_rua(n.to_string()) {
+                println!("Failed to output.");
+            }
+        }
         Ok(())
     }
 
