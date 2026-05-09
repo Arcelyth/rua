@@ -1,6 +1,10 @@
 use crate::render::*;
 use crate::sprite::*;
 use clap::Parser;
+use std::error::Error;
+
+use crate::sp::*;
+
 
 #[derive(Parser, Debug)]
 #[command(author, version, about = "Rua ASCII Renderer")]
@@ -42,7 +46,8 @@ impl CLI {
         let result = if args.sprite {
             Self::handle_sprite(&args)
         } else {
-            Self::handle_image(&args)
+//            Self::handle_image(&args)
+            Self::handle_rua(&args)
         };
 
         if let Err(e) = result {
@@ -51,7 +56,13 @@ impl CLI {
         }
     }
 
-    fn handle_image(args: &Args) -> anyhow::Result<()> {
+    fn handle_rua(args: &Args) -> Result<(), Box<dyn Error>> {
+        let s = RuaSprite::from_img(args.path.clone(), args.width, 10.)?;
+        println!("{}", s.to_string(1));
+        Ok(())
+    }
+
+    fn handle_image(args: &Args) -> Result<(), Box<dyn Error>> {
         let img = RuaImage::from_path(args.path.clone(), args.width, args.detail, args.color)?;
 
         let output = if args.color {
@@ -64,7 +75,8 @@ impl CLI {
         Ok(())
     }
 
-    fn handle_sprite(args: &Args) -> anyhow::Result<()> {
+
+    fn handle_sprite(args: &Args) -> Result<(), Box<dyn Error>> {
         let spr = Sprite::from_path(
             args.path.clone(),
             args.frames,
@@ -74,6 +86,7 @@ impl CLI {
             args.detail,
             args.color,
             args.fps,
+            None,
         )?;
 
 

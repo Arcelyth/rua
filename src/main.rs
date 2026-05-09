@@ -1,9 +1,4 @@
-mod render;
-
-mod sprite;
-
-mod cli;
-use cli::*;
+use rua::cli::*;
 
 fn main() {
     CLI::run();

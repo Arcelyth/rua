@@ -1,118 +1,99 @@
+#![allow(dead_code)]
+
 use anyhow::{Context, Result};
-use crossterm::{
-    event::{self, Event, KeyCode},
-    execute,
-    terminal::{disable_raw_mode, enable_raw_mode},
-};
-use image::DynamicImage;
-use std::io::{self, Write};
-use std::time::Duration;
+use image::imageops::FilterType;
+use image::{DynamicImage, GenericImageView};
+use std::error::Error;
 
-use crate::render::*;
-
-#[allow(dead_code)]
-pub struct Sprite {
-    pub sheet: DynamicImage,
-    pub num_frames: u32,
-    pub frame_width: u32,
-    pub frame_height: u32,
-    pub target_width: u32,
-    pub detail: bool,
-    pub color: bool,
-    pub frame_duration: Duration,
+// rua format
+// width height frame
+// frame_index, pos_x, pos_y, char, color
+pub struct RuaSprite {
+    width: u32,
+    height: u32,
+    frame_num: u32,
+    frames: Vec<Option<(char, (u8, u8, u8))>>,
+    fps: f64,
+    colorful: bool,
 }
 
-impl Sprite {
-    pub fn from_path(
-        path: String,
-        num_frames: u32,
-        frame_width: u32,
-        frame_height: u32,
-        target_width: u32,
-        detail: bool,
-        color: bool,
-        fps: u32,
-    ) -> Result<Self> {
-        let img =
-            image::open(&path).with_context(|| format!("Failed to open sprite sheet: {path}"))?;
-
-        let frame_duration = Duration::from_millis((1000.0 / fps as f32) as u64);
-
-        Ok(Self {
-            sheet: img,
-            num_frames,
-            frame_width,
-            frame_height,
-            target_width,
-            detail,
-            color,
-            frame_duration,
-        })
-    }
-
-    fn get_frame(&self, index: u32) -> RuaImage {
-        let sheet_width = self.sheet.width();
-        let cols = sheet_width / self.frame_width;
-
-        let row = index / cols;
-        let col = index % cols;
-
-        let start_x = col * self.frame_width;
-        let start_y = row * self.frame_height;
-
-        let frame_img = self
-            .sheet
-            .crop_imm(start_x, start_y, self.frame_width, self.frame_height);
-
-        RuaImage {
-            image: frame_img,
-            width: self.target_width,
-            detail: self.detail,
-            color: self.color,
+impl RuaSprite {
+    pub fn new(width: u32, height: u32, frame_num: u32, fps: f64, colorful: bool) -> Self {
+        let frames: Vec<Option<(char, (u8, u8, u8))>> =
+            vec![None; (width * height * frame_num) as usize];
+        Self {
+            width,
+            height,
+            frame_num,
+            frames,
+            fps,
+            colorful,
         }
     }
 
-    pub fn play(&self) -> anyhow::Result<()> {
-        enable_raw_mode()?;
-        let mut stdout = io::stdout();
-        execute!(
-            stdout,
-            crossterm::cursor::Hide,
-            crossterm::terminal::Clear(crossterm::terminal::ClearType::All)
-        )?;
+    pub fn from_img(path: String, width: u32, fps: f64) -> Result<Self, Box<dyn Error>> {
+        let img = image::open(&path).with_context(|| format!("Failed to open file: {path}"))?;
+        let table = get_ascii_table(false);
+        let (img_width, img_height) = img.dimensions();
 
-        let mut current_frame = 0;
+        let ratio = img_height as f32 / img_width as f32;
+        let out_height = (ratio * width as f32 * 0.55) as u32;
 
-        let result = loop {
-            let frame = self.get_frame(current_frame);
-            let ascii_frame = if self.color {
-                frame.to_ascii_colorful()
-            } else {
-                frame.to_ascii()
-            };
+        let resized_img = img.resize_exact(width, out_height, FilterType::Triangle);
+        let gray_img = resized_img.grayscale().into_luma8();
 
-            print!("\x1b[H{}", ascii_frame);
-            stdout.flush()?;
+        let mut frames = vec![];
+        for y in 0..out_height {
+            for x in 0..width {
+                let luma_pixel = gray_img.get_pixel(x, y);
+                let index = (luma_pixel[0] as f32 / 255.0 * (table.len() - 1) as f32) as usize;
+                let c = table.chars().nth(index).unwrap();
 
-            if event::poll(self.frame_duration)? {
-                if let Event::Key(key_event) = event::read()? {
-                    match key_event.code {
-                        KeyCode::Char('q') | KeyCode::Esc => break Ok(()),
-                        _ => {}
-                    }
+                let rgb_pixel = resized_img.get_pixel(x, y);
+                let r = rgb_pixel[0];
+                let g = rgb_pixel[1];
+                let b = rgb_pixel[2];
+                frames.push(Some((c, (r, g, b))));
+            }
+        }
+        Ok(Self {
+            width,
+            height: out_height,
+            frame_num: 1,
+            frames,
+            fps,
+            colorful: true,
+        })
+    }
+
+    pub fn to_string(&self, frame: u32) -> String {
+        if frame > self.frame_num {
+            return "".to_string();
+        }
+        let mut out = String::new();
+        let width = self.width;
+        let height = self.height;
+
+        for y in 0..height {
+            for x in 0..width {
+                let f = (frame - 1) * width * height;
+                if let Some(p) = self.frames[(f + (y * width + x)) as usize] {
+                    let color = p.1;
+                    let colored_char = format!("\x1b[38;2;{};{};{}m{}", color.0, color.1, color.2, p.0);
+                    out.push_str(&colored_char);
                 }
             }
+            out.push_str("\x1b[0m\r\n");
+        }
 
-            current_frame = (current_frame + 1) % self.num_frames;
-            print!("Animation playing... Press 'q' or 'Esc' to exit.");
-            stdout.flush()?;
-        };
+        out
+    }
+}
 
-        execute!(stdout, crossterm::cursor::Show)?;
-        disable_raw_mode()?;
-
-        println!();
-
-        result
+pub fn get_ascii_table(detail: bool) -> &'static str {
+    if detail {
+        r#" .'`^\",:;Il!i><~+_-?][}{1)(|\\/tfjrxnuvczXYUJCLQ0OZmwqpdbkhao*#MW&8%B@$"#
+    } else {
+        " .:-=+*#%"
     }
 }
