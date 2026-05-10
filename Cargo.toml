@@ -2,6 +2,11 @@
 name = "rua"
 version = "0.1.0"
 edition = "2024"
+repository = "https://github.com/Arcelyth/rua"
+homepage = "https://github.com/Arcelyth/rua"
+license = "MIT"
+description = "A file format for handle image or sprite in terminal"
+keywords = ["image", "terminal", "sprite"]
 
 [dependencies]
 clap = { version = "4.5.56", features = ["derive"] }
