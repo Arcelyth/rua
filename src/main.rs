@@ -1,4 +1,4 @@
-use rua::cli::*;
+use rua_rs::cli::*;
 
 fn main() {
     CLI::run();
