@@ -1,17 +1,17 @@
-#![allow(dead_code)]
+//! # Rua 
+//!
 
-use anyhow::{Context, Result};
 use image::GenericImageView;
 use image::imageops::FilterType;
 use std::error::Error;
 use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, Write};
 
-// rua format
-// width height frame
-// frame_index, pos_x, pos_y, char, r, g, b
-// frame_index, pos_x, pos_y, char, r, g, b
-// ...
+/// rua format
+/// width height frame
+/// frame_index, pos_x, pos_y, char, r, g, b
+/// frame_index, pos_x, pos_y, char, r, g, b
+/// ...
 #[derive(Debug, PartialEq)]
 pub struct RuaSprite {
     width: u32,
@@ -39,7 +39,7 @@ impl RuaSprite {
     }
 
     pub fn from_img(path: String, width: u32, fps: f64) -> Result<Self, Box<dyn Error>> {
-        let img = image::open(&path).with_context(|| format!("Failed to open file: {path}"))?;
+        let img = image::open(&path)?;
         let table = get_ascii_table(false);
         let (img_width, img_height) = img.dimensions();
 
@@ -149,6 +149,7 @@ impl RuaSprite {
         self.current_frame += 1;
     }
 
+    // insert frame to the last position
     pub fn insert_frame(&mut self, f: &[Option<(char, (u8, u8, u8))>]) -> bool {
         if f.len() != (self.width * self.height) as usize {
             return false;
@@ -171,6 +172,30 @@ impl RuaSprite {
 
         self.frame_num += 1;
         true
+    }
+
+    pub fn remove_frame_at(&mut self, pos: u32) -> Option<Vec<Option<(char, (u8, u8, u8))>>> {
+        if pos >= self.frame_num || self.frame_num == 0 {
+            return None;
+        }
+
+        let size = (self.width * self.height) as usize;
+        let start_idx = (pos as usize) * size;
+        let end_idx = start_idx + size;
+
+        let removed_data: Vec<_> = self.frames.drain(start_idx..end_idx).collect();
+
+        self.frame_num -= 1;
+
+        Some(removed_data)
+    }
+
+    // remove the last frame
+    pub fn remove_frame(&mut self) -> bool {
+        if self.frame_num == 0 {
+            return false;
+        }
+        self.remove_frame_at(self.frame_num - 1).is_some()
     }
 
     pub fn to_string(&self, frame: u32) -> String {
