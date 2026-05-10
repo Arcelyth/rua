@@ -17,6 +17,7 @@ pub struct RuaSprite {
     width: u32,
     height: u32,
     frame_num: u32,
+    current_frame: u32,
     frames: Vec<Option<(char, (u8, u8, u8))>>,
     fps: f64,
     colorful: bool,
@@ -30,6 +31,7 @@ impl RuaSprite {
             width,
             height,
             frame_num,
+            current_frame: 0,
             frames,
             fps,
             colorful,
@@ -65,6 +67,7 @@ impl RuaSprite {
             width,
             height: out_height,
             frame_num: 1,
+            current_frame: 0,
             frames,
             fps,
             colorful: true,
@@ -95,12 +98,14 @@ impl RuaSprite {
             let g = pixel.get(5).unwrap().parse::<u8>().unwrap();
             let b = pixel.get(6).unwrap().parse::<u8>().unwrap();
 
-            frames[((f_idx * width * height) + (width * pos_y) + pos_x) as usize] = Some((ch, (r, g, b)));
+            frames[((f_idx * width * height) + (width * pos_y) + pos_x) as usize] =
+                Some((ch, (r, g, b)));
         }
         Ok(Self {
             width,
             height,
             frame_num: frame_num,
+            current_frame: 0,
             frames,
             fps,
             colorful,
@@ -132,6 +137,40 @@ impl RuaSprite {
         }
         writer.flush()?;
         Ok(())
+    }
+
+    pub fn get_current_frame(&self) -> &[Option<(char, (u8, u8, u8))>] {
+        let size = self.width * self.height;
+        let start = size * self.current_frame;
+        &self.frames[start as usize..(start + size) as usize]
+    }
+
+    pub fn next(&mut self) {
+        self.current_frame += 1;
+    }
+
+    pub fn insert_frame(&mut self, f: &[Option<(char, (u8, u8, u8))>]) -> bool {
+        if f.len() != (self.width * self.height) as usize {
+            return false;
+        }
+
+        self.frames.extend_from_slice(f);
+
+        self.frame_num += 1;
+        true
+    }
+
+    pub fn insert_frame_at(&mut self, f: &[Option<(char, (u8, u8, u8))>], pos: u32) -> bool {
+        if f.len() != (self.width * self.height) as usize || pos > self.frame_num {
+            return false;
+        }
+
+        let start_idx = (pos * self.width * self.height) as usize;
+
+        self.frames.splice(start_idx..start_idx, f.iter().cloned());
+
+        self.frame_num += 1;
+        true
     }
 
     pub fn to_string(&self, frame: u32) -> String {
@@ -179,13 +218,14 @@ mod tests {
             width: 10,
             height: 1,
             frame_num: 1,
+            current_frame: 0,
             frames: vec![
-                Some(('*', (255, 0, 0 ))),
-                Some(('*', (255, 0, 0 ))),
-                Some(('*', (255, 0, 0 ))),
-                Some(('*', (0, 255, 0 ))),
-                Some(('*', (0, 255, 0 ))),
-                Some(('*', (0, 255, 0 ))),
+                Some(('*', (255, 0, 0))),
+                Some(('*', (255, 0, 0))),
+                Some(('*', (255, 0, 0))),
+                Some(('*', (0, 255, 0))),
+                Some(('*', (0, 255, 0))),
+                Some(('*', (0, 255, 0))),
                 None,
                 None,
                 None,
@@ -197,4 +237,3 @@ mod tests {
         assert_eq!(res, sprite);
     }
 }
-

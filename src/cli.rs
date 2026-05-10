@@ -1,9 +1,6 @@
-use crate::render::*;
 use crate::sprite::*;
 use clap::Parser;
 use std::error::Error;
-
-use crate::sp::*;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about = "Rua ASCII Renderer")]
@@ -18,19 +15,6 @@ struct Args {
 
     #[arg(short, long, default_value = "false")]
     color: bool,
-
-    #[arg(short, long, default_value = "false")]
-    sprite: bool,
-
-    // Sprite attributes
-    #[arg(long, default_value = "1", requires = "sprite")]
-    frames: u32,
-
-    #[arg(long, default_value = "0", requires = "sprite")]
-    fw: u32,
-
-    #[arg(long, default_value = "0", requires = "sprite")]
-    fh: u32,
 
     #[arg(long, default_value = "10", requires = "sprite")]
     fps: u32,
@@ -48,15 +32,10 @@ impl CLI {
     pub fn run() {
         let args = Args::parse();
 
-        let result = if args.sprite {
-            Self::handle_sprite(&args)
+        let result = if args.rua {
+            Self::handle_rua(&args)
         } else {
-            //            Self::handle_image(&args)
-            if args.rua {
-                Self::handle_rua(&args)
-            } else {
-                Self::handle_image(&args)
-            }
+            Self::handle_image(&args)
         };
 
         if let Err(e) = result {
@@ -84,25 +63,6 @@ impl CLI {
                 println!("Failed to output.");
             }
         }
-        Ok(())
-    }
-
-
-    fn handle_sprite(args: &Args) -> Result<(), Box<dyn Error>> {
-        let spr = Sprite::from_path(
-            args.path.clone(),
-            args.frames,
-            args.fw,
-            args.fh,
-            args.width,
-            args.detail,
-            args.color,
-            args.fps,
-            None,
-        )?;
-
-        spr.play()?;
-
         Ok(())
     }
 }
