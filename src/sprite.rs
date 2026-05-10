@@ -12,6 +12,7 @@ use std::io::{BufRead, BufReader, BufWriter, Write};
 // frame_index, pos_x, pos_y, char, r, g, b
 // frame_index, pos_x, pos_y, char, r, g, b
 // ...
+#[derive(Debug, PartialEq)]
 pub struct RuaSprite {
     width: u32,
     height: u32,
@@ -166,4 +167,34 @@ pub fn get_ascii_table(detail: bool) -> &'static str {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_from_rua() {
+        let sprite = RuaSprite::from_rua("./test_file/test.rua".to_string(), 10., true).unwrap();
+
+        let res = RuaSprite {
+            width: 10,
+            height: 1,
+            frame_num: 1,
+            frames: vec![
+                Some(('*', (255, 0, 0 ))),
+                Some(('*', (255, 0, 0 ))),
+                Some(('*', (255, 0, 0 ))),
+                Some(('*', (0, 255, 0 ))),
+                Some(('*', (0, 255, 0 ))),
+                Some(('*', (0, 255, 0 ))),
+                None,
+                None,
+                None,
+                None,
+            ],
+            fps: 10.,
+            colorful: true,
+        };
+        assert_eq!(res, sprite);
+    }
+}
 
