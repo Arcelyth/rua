@@ -5,7 +5,6 @@ use std::error::Error;
 
 use crate::sp::*;
 
-
 #[derive(Parser, Debug)]
 #[command(author, version, about = "Rua ASCII Renderer")]
 struct Args {
@@ -38,6 +37,9 @@ struct Args {
 
     #[arg(short, long)]
     output: Option<String>,
+
+    #[arg(short, long)]
+    rua: bool,
 }
 
 pub struct CLI {}
@@ -49,8 +51,12 @@ impl CLI {
         let result = if args.sprite {
             Self::handle_sprite(&args)
         } else {
-//            Self::handle_image(&args)
-            Self::handle_rua(&args)
+            //            Self::handle_image(&args)
+            if args.rua {
+                Self::handle_rua(&args)
+            } else {
+                Self::handle_image(&args)
+            }
         };
 
         if let Err(e) = result {
@@ -59,7 +65,7 @@ impl CLI {
         }
     }
 
-    fn handle_rua(args: &Args) -> Result<(), Box<dyn Error>> {
+    fn handle_image(args: &Args) -> Result<(), Box<dyn Error>> {
         let s = RuaSprite::from_img(args.path.clone(), args.width, 10.)?;
         println!("{}", s.to_string(1));
         if let Some(n) = &args.output {
@@ -70,16 +76,14 @@ impl CLI {
         Ok(())
     }
 
-    fn handle_image(args: &Args) -> Result<(), Box<dyn Error>> {
-        let img = RuaImage::from_path(args.path.clone(), args.width, args.detail, args.color)?;
-
-        let output = if args.color {
-            img.to_ascii_colorful()
-        } else {
-            img.to_ascii()
-        };
-
-        println!("{}", output);
+    fn handle_rua(args: &Args) -> Result<(), Box<dyn Error>> {
+        let s = RuaSprite::from_rua(args.path.clone(), 10., true)?;
+        println!("{}", s.to_string(1));
+        if let Some(n) = &args.output {
+            if let Err(_) = s.output_rua(n.to_string()) {
+                println!("Failed to output.");
+            }
+        }
         Ok(())
     }
 
@@ -96,7 +100,6 @@ impl CLI {
             args.fps,
             None,
         )?;
-
 
         spr.play()?;
 

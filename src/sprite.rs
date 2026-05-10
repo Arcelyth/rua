@@ -1,11 +1,11 @@
 #![allow(dead_code)]
 
 use anyhow::{Context, Result};
-use std::fs::File;
-use std::io::{Write, BufWriter};
 use image::GenericImageView;
 use image::imageops::FilterType;
 use std::error::Error;
+use std::fs::File;
+use std::io::{BufRead, BufReader, BufWriter, Write};
 
 // rua format
 // width height frame
@@ -70,6 +70,42 @@ impl RuaSprite {
         })
     }
 
+    pub fn from_rua(path: String, fps: f64, colorful: bool) -> Result<Self, Box<dyn Error>> {
+        let file = File::open(path)?;
+        let mut reader = BufReader::new(file);
+        let mut header = String::new();
+        reader.read_line(&mut header)?;
+        let meta_info: Vec<&str> = header.split_whitespace().collect();
+        let width = meta_info.get(0).unwrap().parse::<u32>().unwrap();
+        let height = meta_info.get(1).unwrap().parse::<u32>().unwrap();
+        let frame_num = meta_info.get(2).unwrap().parse::<u32>().unwrap();
+        let mut frames = vec![None; (width * height * frame_num) as usize];
+        for line in reader.lines() {
+            let line = line?;
+            if line.is_empty() {
+                continue;
+            }
+            let pixel: Vec<&str> = line.split_whitespace().collect();
+            let f_idx = pixel.get(0).unwrap().parse::<u32>().unwrap();
+            let pos_x = pixel.get(1).unwrap().parse::<u32>().unwrap();
+            let pos_y = pixel.get(2).unwrap().parse::<u32>().unwrap();
+            let ch = pixel.get(3).unwrap().parse::<char>().unwrap();
+            let r = pixel.get(4).unwrap().parse::<u8>().unwrap();
+            let g = pixel.get(5).unwrap().parse::<u8>().unwrap();
+            let b = pixel.get(6).unwrap().parse::<u8>().unwrap();
+
+            frames[((f_idx * width * height) + (width * pos_y) + pos_x) as usize] = Some((ch, (r, g, b)));
+        }
+        Ok(Self {
+            width,
+            height,
+            frame_num: frame_num,
+            frames,
+            fps,
+            colorful,
+        })
+    }
+
     pub fn output_rua(&self, path: String) -> Result<(), Box<dyn Error>> {
         let file = File::create(path)?;
         let mut writer = BufWriter::new(file);
@@ -88,7 +124,7 @@ impl RuaSprite {
 
                 writeln!(
                     writer,
-                    "{}, {}, {}, {}, {}, {}, {}",
+                    "{} {} {} {} {} {} {}",
                     frame_index, pos_x, pos_y, ch, r, g, b
                 )?;
             }
@@ -129,3 +165,5 @@ pub fn get_ascii_table(detail: bool) -> &'static str {
         " .:-=+*#%"
     }
 }
+
+
