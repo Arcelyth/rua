@@ -1,5 +1,5 @@
-//! # Rua 
-//!
+//! # Rua-rs
+//! A file format for handle image or sprite in terminal
 
 use image::GenericImageView;
 use image::imageops::FilterType;
@@ -12,6 +12,9 @@ use std::io::{BufRead, BufReader, BufWriter, Write};
 /// frame_index, pos_x, pos_y, char, r, g, b
 /// frame_index, pos_x, pos_y, char, r, g, b
 /// ...
+///
+/// Represents an ASCII art sprite animation format capable of managing multi-frame,
+/// colored character sequences with specific dimensions and playback speed.
 #[derive(Debug, PartialEq)]
 pub struct RuaSprite {
     width: u32,
@@ -38,6 +41,13 @@ impl RuaSprite {
         }
     }
 
+    /// Generates a single-frame `RuaSprite` from an external image file.
+    ///
+    /// Automatically rescales the image to the specified target `width` while balancing
+    /// the terminal font aspect ratio (0.55 multiplier).
+    ///
+    /// # Errors
+    /// Returns an error if the image file cannot be opened or decoded.
     pub fn from_img(path: String, width: u32, fps: f64) -> Result<Self, Box<dyn Error>> {
         let img = image::open(&path)?;
         let table = get_ascii_table(false);
@@ -74,6 +84,10 @@ impl RuaSprite {
         })
     }
 
+    /// Loads and parses a `.rua` custom animation file into a `RuaSprite`.
+    ///
+    /// # Errors
+    /// Returns an error if the file is missing, corrupted, or does not match the space-separated format.
     pub fn from_rua(path: String, fps: f64, colorful: bool) -> Result<Self, Box<dyn Error>> {
         let file = File::open(path)?;
         let mut reader = BufReader::new(file);
@@ -112,6 +126,10 @@ impl RuaSprite {
         })
     }
 
+    /// Serializes and writes the current sprite data out into a `.rua` text file format.
+    ///
+    /// # Errors
+    /// Returns an error if disk writing or flushing fails.
     pub fn output_rua(&self, path: String) -> Result<(), Box<dyn Error>> {
         let file = File::create(path)?;
         let mut writer = BufWriter::new(file);
@@ -139,17 +157,20 @@ impl RuaSprite {
         Ok(())
     }
 
+    /// Returns a slice corresponding to the data of the current active frame.
     pub fn get_current_frame(&self) -> &[Option<(char, (u8, u8, u8))>] {
         let size = self.width * self.height;
         let start = size * self.current_frame;
         &self.frames[start as usize..(start + size) as usize]
     }
 
+    /// Advances the internal animation pointer to the next frame.
     pub fn next(&mut self) {
         self.current_frame += 1;
     }
 
-    // insert frame to the last position
+    /// Appends a new animation frame to the very end of the frame buffer.
+    /// Returns `false` if the incoming frame size does not match the sprite's dimensions.
     pub fn insert_frame(&mut self, f: &[Option<(char, (u8, u8, u8))>]) -> bool {
         if f.len() != (self.width * self.height) as usize {
             return false;
@@ -161,6 +182,8 @@ impl RuaSprite {
         true
     }
 
+    /// Splices a new frame into the specified position index, pushing subsequent frames back.
+    /// Returns `false` if the dimension mismatches or the target position is out of bounds.
     pub fn insert_frame_at(&mut self, f: &[Option<(char, (u8, u8, u8))>], pos: u32) -> bool {
         if f.len() != (self.width * self.height) as usize || pos > self.frame_num {
             return false;
@@ -174,6 +197,8 @@ impl RuaSprite {
         true
     }
 
+    /// Removes and returns the frame data at a specific index position.
+    /// Returns `None` if the index is out of bounds or no frames exist.
     pub fn remove_frame_at(&mut self, pos: u32) -> Option<Vec<Option<(char, (u8, u8, u8))>>> {
         if pos >= self.frame_num || self.frame_num == 0 {
             return None;
@@ -190,7 +215,7 @@ impl RuaSprite {
         Some(removed_data)
     }
 
-    // remove the last frame
+    /// Pops the last frame off the end of the animation buffer. Returns `false` if empty.
     pub fn remove_frame(&mut self) -> bool {
         if self.frame_num == 0 {
             return false;
@@ -198,6 +223,9 @@ impl RuaSprite {
         self.remove_frame_at(self.frame_num - 1).is_some()
     }
 
+    /// Renders a specific frame (1-indexed) into an ANSI terminal colored `String`.
+    ///
+    /// Uses TrueColor escape sequences (`\x1b[38;2;R;G;Bm`) for rich text output.
     pub fn to_string(&self, frame: u32) -> String {
         if frame > self.frame_num {
             return "".to_string();
@@ -223,7 +251,7 @@ impl RuaSprite {
     }
 }
 
-pub fn get_ascii_table(detail: bool) -> &'static str {
+fn get_ascii_table(detail: bool) -> &'static str {
     if detail {
         r#" .'`^\",:;Il!i><~+_-?][}{1)(|\\/tfjrxnuvczXYUJCLQ0OZmwqpdbkhao*#MW&8%B@$"#
     } else {
