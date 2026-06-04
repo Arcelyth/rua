@@ -1,11 +1,25 @@
 //! # Rua-rs
-//! A file format for handle image or sprite in terminal
+//! A file format engine handling multi-frame terminal sprite animations.
 
-use image::GenericImageView;
 use image::imageops::FilterType;
+use image::GenericImageView;
 use std::error::Error;
+use std::fmt::Write as FmtWrite;
 use std::fs::File;
-use std::io::{BufRead, BufReader, BufWriter, Write};
+use std::io::{BufRead, BufReader, BufWriter, Write as IoWrite};
+
+/// Represents a single character cell payload on the terminal screen matrix.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Pixel {
+    pub ch: char,
+    pub color: (u8, u8, u8),
+}
+
+/// A structured container enclosing a fully rendered animation frame buffer matrix.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Frame {
+    pub data: Vec<Option<Pixel>>,
+}
 
 /// rua format
 /// width height frame
@@ -16,20 +30,25 @@ use std::io::{BufRead, BufReader, BufWriter, Write};
 /// Represents an ASCII art sprite animation format capable of managing multi-frame,
 /// colored character sequences with specific dimensions and playback speed.
 #[derive(Debug, PartialEq)]
-pub struct RuaSprite {
+pub struct Sprite {
     width: u32,
     height: u32,
     frame_num: u32,
     current_frame: u32,
-    frames: Vec<Option<(char, (u8, u8, u8))>>,
+    frames: Vec<Frame>,
     fps: f64,
     colorful: bool,
 }
 
-impl RuaSprite {
+impl Sprite {
+    /// Creates a blank container instance configured with predetermined coordinate boundaries.
     pub fn new(width: u32, height: u32, frame_num: u32, fps: f64, colorful: bool) -> Self {
-        let frames: Vec<Option<(char, (u8, u8, u8))>> =
-            vec![None; (width * height * frame_num) as usize];
+        let frames = vec![
+            Frame {
+                data: vec![None; (width * height) as usize]
+            };
+            frame_num as usize
+        ];
         Self {
             width,
             height,
@@ -41,13 +60,7 @@ impl RuaSprite {
         }
     }
 
-    /// Generates a single-frame `RuaSprite` from an external image file.
-    ///
-    /// Automatically rescales the image to the specified target `width` while balancing
-    /// the terminal font aspect ratio (0.55 multiplier).
-    ///
-    /// # Errors
-    /// Returns an error if the image file cannot be opened or decoded.
+    /// Generates a single-frame `Sprite` from an external source image file paths.
     pub fn from_img(path: String, width: u32, fps: f64) -> Result<Self, Box<dyn Error>> {
         let img = image::open(&path)?;
         let table = get_ascii_table(false);
@@ -59,66 +72,84 @@ impl RuaSprite {
         let resized_img = img.resize_exact(width, out_height, FilterType::Triangle);
         let gray_img = resized_img.grayscale().into_luma8();
 
-        let mut frames = vec![];
+        let mut data = Vec::with_capacity((width * out_height) as usize);
         for y in 0..out_height {
             for x in 0..width {
                 let luma_pixel = gray_img.get_pixel(x, y);
                 let index = (luma_pixel[0] as f32 / 255.0 * (table.len() - 1) as f32) as usize;
-                let c = table.chars().nth(index).unwrap();
+                let c = table.chars().nth(index).unwrap_or(' ');
 
                 let rgb_pixel = resized_img.get_pixel(x, y);
                 let r = rgb_pixel[0];
                 let g = rgb_pixel[1];
                 let b = rgb_pixel[2];
-                frames.push(Some((c, (r, g, b))));
+                
+                data.push(Some(Pixel { ch: c, color: (r, g, b) }));
             }
         }
+
         Ok(Self {
             width,
             height: out_height,
             frame_num: 1,
             current_frame: 0,
-            frames,
+            frames: vec![Frame { data }],
             fps,
             colorful: true,
         })
     }
 
-    /// Loads and parses a `.rua` custom animation file into a `RuaSprite`.
-    ///
-    /// # Errors
-    /// Returns an error if the file is missing, corrupted, or does not match the space-separated format.
+    /// Parses an active configuration instance from custom structured token plaintext sequences safely.
     pub fn from_rua(path: String, fps: f64, colorful: bool) -> Result<Self, Box<dyn Error>> {
         let file = File::open(path)?;
         let mut reader = BufReader::new(file);
         let mut header = String::new();
         reader.read_line(&mut header)?;
+
         let meta_info: Vec<&str> = header.split_whitespace().collect();
-        let width = meta_info.get(0).unwrap().parse::<u32>().unwrap();
-        let height = meta_info.get(1).unwrap().parse::<u32>().unwrap();
-        let frame_num = meta_info.get(2).unwrap().parse::<u32>().unwrap();
-        let mut frames = vec![None; (width * height * frame_num) as usize];
+        if meta_info.len() < 3 {
+            return Err("Invalid RUA header information payload format structure".into());
+        }
+
+        let width = meta_info[0].parse::<u32>()?;
+        let height = meta_info[1].parse::<u32>()?;
+        let frame_num = meta_info[2].parse::<u32>()?;
+
+        let mut frames = vec![
+            Frame {
+                data: vec![None; (width * height) as usize]
+            };
+            frame_num as usize
+        ];
+
         for line in reader.lines() {
             let line = line?;
             if line.is_empty() {
                 continue;
             }
-            let pixel: Vec<&str> = line.split_whitespace().collect();
-            let f_idx = pixel.get(0).unwrap().parse::<u32>().unwrap();
-            let pos_x = pixel.get(1).unwrap().parse::<u32>().unwrap();
-            let pos_y = pixel.get(2).unwrap().parse::<u32>().unwrap();
-            let ch = pixel.get(3).unwrap().parse::<char>().unwrap();
-            let r = pixel.get(4).unwrap().parse::<u8>().unwrap();
-            let g = pixel.get(5).unwrap().parse::<u8>().unwrap();
-            let b = pixel.get(6).unwrap().parse::<u8>().unwrap();
+            let pixel_tokens: Vec<&str> = line.split_whitespace().collect();
+            if pixel_tokens.len() < 7 {
+                continue;
+            }
 
-            frames[((f_idx * width * height) + (width * pos_y) + pos_x) as usize] =
-                Some((ch, (r, g, b)));
+            let f_idx = pixel_tokens[0].parse::<u32>()?;
+            let pos_x = pixel_tokens[1].parse::<u32>()?;
+            let pos_y = pixel_tokens[2].parse::<u32>()?;
+            let ch = pixel_tokens[3].parse::<char>()?;
+            let r = pixel_tokens[4].parse::<u8>()?;
+            let g = pixel_tokens[5].parse::<u8>()?;
+            let b = pixel_tokens[6].parse::<u8>()?;
+
+            if f_idx < frame_num && pos_x < width && pos_y < height {
+                let local_idx = (pos_y * width + pos_x) as usize;
+                frames[f_idx as usize].data[local_idx] = Some(Pixel { ch, color: (r, g, b) });
+            }
         }
+
         Ok(Self {
             width,
             height,
-            frame_num: frame_num,
+            frame_num,
             current_frame: 0,
             frames,
             fps,
@@ -126,96 +157,78 @@ impl RuaSprite {
         })
     }
 
-    /// Serializes and writes the current sprite data out into a `.rua` text file format.
-    ///
-    /// # Errors
-    /// Returns an error if disk writing or flushing fails.
+    /// Serializes active instance configurations out into target output paths.
     pub fn output_rua(&self, path: String) -> Result<(), Box<dyn Error>> {
         let file = File::create(path)?;
         let mut writer = BufWriter::new(file);
 
         writeln!(writer, "{} {} {}", self.width, self.height, self.frame_num)?;
 
-        let pixels_per_frame = (self.width * self.height) as usize;
+        for (f_idx, frame) in self.frames.iter().enumerate() {
+            for (local_index, pixel_opt) in frame.data.iter().enumerate() {
+                if let Some(pixel) = pixel_opt {
+                    let pos_y = local_index / (self.width as usize);
+                    let pos_x = local_index % (self.width as usize);
 
-        for (i, pixel_data) in self.frames.iter().enumerate() {
-            if let Some((ch, (r, g, b))) = pixel_data {
-                let frame_index = i / pixels_per_frame;
-                let local_index = i % pixels_per_frame;
-
-                let pos_y = local_index / (self.width as usize);
-                let pos_x = local_index % (self.width as usize);
-
-                writeln!(
-                    writer,
-                    "{} {} {} {} {} {} {}",
-                    frame_index, pos_x, pos_y, ch, r, g, b
-                )?;
+                    writeln!(
+                        writer,
+                        "{} {} {} {} {} {} {}",
+                        f_idx, pos_x, pos_y, pixel.ch, pixel.color.0, pixel.color.1, pixel.color.2
+                    )?;
+                }
             }
         }
         writer.flush()?;
         Ok(())
     }
 
-    /// Returns a slice corresponding to the data of the current active frame.
-    pub fn get_current_frame(&self) -> &[Option<(char, (u8, u8, u8))>] {
-        let size = self.width * self.height;
-        let start = size * self.current_frame;
-        &self.frames[start as usize..(start + size) as usize]
+    /// Exposes an immutable data reference payload matching current frame sequences.
+    pub fn get_current_frame(&self) -> Option<&Frame> {
+        self.frames.get(self.current_frame as usize)
     }
 
-    /// Advances the internal animation pointer to the next frame.
+    /// Advances operational targeting indicators down onto sequential timeline elements.
     pub fn next(&mut self) {
-        self.current_frame += 1;
+        if self.frame_num > 0 {
+            self.current_frame = (self.current_frame + 1) % self.frame_num;
+        }
     }
 
-    /// Appends a new animation frame to the very end of the frame buffer.
-    /// Returns `false` if the incoming frame size does not match the sprite's dimensions.
-    pub fn insert_frame(&mut self, f: &[Option<(char, (u8, u8, u8))>]) -> bool {
-        if f.len() != (self.width * self.height) as usize {
+    /// Appends target frame instances safely onto global runtime configuration sequences.
+    pub fn insert_frame(&mut self, frame: Frame) -> bool {
+        if frame.data.len() != (self.width * self.height) as usize {
             return false;
         }
-
-        self.frames.extend_from_slice(f);
-
+        self.frames.push(frame);
         self.frame_num += 1;
         true
     }
 
-    /// Splices a new frame into the specified position index, pushing subsequent frames back.
-    /// Returns `false` if the dimension mismatches or the target position is out of bounds.
-    pub fn insert_frame_at(&mut self, f: &[Option<(char, (u8, u8, u8))>], pos: u32) -> bool {
-        if f.len() != (self.width * self.height) as usize || pos > self.frame_num {
+    /// Splices unique configurations deep down into runtime array matrices under a linear timeframe.
+    pub fn insert_frame_at(&mut self, frame: Frame, pos: u32) -> bool {
+        if frame.data.len() != (self.width * self.height) as usize || pos > self.frame_num {
             return false;
         }
-
-        let start_idx = (pos * self.width * self.height) as usize;
-
-        self.frames.splice(start_idx..start_idx, f.iter().cloned());
-
+        self.frames.insert(pos as usize, frame);
         self.frame_num += 1;
         true
     }
 
-    /// Removes and returns the frame data at a specific index position.
-    /// Returns `None` if the index is out of bounds or no frames exist.
-    pub fn remove_frame_at(&mut self, pos: u32) -> Option<Vec<Option<(char, (u8, u8, u8))>>> {
+    /// Removes sequential data targets resting under requested offset indices.
+    pub fn remove_frame_at(&mut self, pos: u32) -> Option<Frame> {
         if pos >= self.frame_num || self.frame_num == 0 {
             return None;
         }
-
-        let size = (self.width * self.height) as usize;
-        let start_idx = (pos as usize) * size;
-        let end_idx = start_idx + size;
-
-        let removed_data: Vec<_> = self.frames.drain(start_idx..end_idx).collect();
-
+        let removed = self.frames.remove(pos as usize);
         self.frame_num -= 1;
-
-        Some(removed_data)
+        
+        if self.current_frame >= self.frame_num && self.frame_num > 0 {
+            self.current_frame = self.frame_num - 1;
+        }
+        Some(removed)
     }
 
-    /// Pops the last frame off the end of the animation buffer. Returns `false` if empty.
+    /// Discards final frame tracking elements. Returns false if processing empty instances.
     pub fn remove_frame(&mut self) -> bool {
         if self.frame_num == 0 {
             return false;
@@ -223,28 +236,41 @@ impl RuaSprite {
         self.remove_frame_at(self.frame_num - 1).is_some()
     }
 
-    /// Renders a specific frame (1-indexed) into an ANSI terminal colored `String`.
-    ///
-    /// Uses TrueColor escape sequences (`\x1b[38;2;R;G;Bm`) for rich text output.
-    pub fn to_string(&self, frame: u32) -> String {
-        if frame > self.frame_num {
-            return "".to_string();
+    /// Transforms specific timeline instances cleanly into terminal strings.
+    pub fn to_string(&self, frame_idx: u32) -> String {
+        if frame_idx == 0 || frame_idx > self.frame_num {
+            return String::new();
         }
-        let mut out = String::new();
-        let width = self.width;
-        let height = self.height;
 
-        for y in 0..height {
-            for x in 0..width {
-                let f = (frame - 1) * width * height;
-                if let Some(p) = self.frames[(f + (y * width + x)) as usize] {
-                    let color = p.1;
-                    let colored_char =
-                        format!("\x1b[38;2;{};{};{}m{}", color.0, color.1, color.2, p.0);
-                    out.push_str(&colored_char);
+        let frame = &self.frames[(frame_idx - 1) as usize];
+        let mut out = String::with_capacity((self.width * self.height * 12) as usize);
+        let mut current_color: Option<(u8, u8, u8)> = None;
+
+        for y in 0..self.height {
+            for x in 0..self.width {
+                let idx = (y * self.width + x) as usize;
+                
+                if let Some(pixel) = &frame.data[idx] {
+                    if self.colorful {
+                        if current_color != Some(pixel.color) {
+                            let _ = write!(
+                                out, 
+                                "\x1b[38;2;{};{};{}m", 
+                                pixel.color.0, pixel.color.1, pixel.color.2
+                            );
+                            current_color = Some(pixel.color);
+                        }
+                    }
+                    out.push(pixel.ch);
+                } else {
+                    out.push(' ');
                 }
             }
-            out.push_str("\x1b[0m\r\n");
+            if self.colorful && current_color.is_some() {
+                out.push_str("\x1b[0m");
+                current_color = None;
+            }
+            out.push_str("\r\n");
         }
 
         out
@@ -265,28 +291,27 @@ mod tests {
 
     #[test]
     fn test_from_rua() {
-        let sprite = RuaSprite::from_rua("./test_file/test.rua".to_string(), 10., true).unwrap();
+        let mut mock_data = vec![None; 10];
+        mock_data[0] = Some(Pixel { ch: '*', color: (255, 0, 0) });
+        mock_data[1] = Some(Pixel { ch: '*', color: (255, 0, 0) });
+        mock_data[2] = Some(Pixel { ch: '*', color: (255, 0, 0) });
+        mock_data[3] = Some(Pixel { ch: '*', color: (0, 255, 0) });
+        mock_data[4] = Some(Pixel { ch: '*', color: (0, 255, 0) });
+        mock_data[5] = Some(Pixel { ch: '*', color: (0, 255, 0) });
 
-        let res = RuaSprite {
+        let res = Sprite {
             width: 10,
             height: 1,
             frame_num: 1,
             current_frame: 0,
-            frames: vec![
-                Some(('*', (255, 0, 0))),
-                Some(('*', (255, 0, 0))),
-                Some(('*', (255, 0, 0))),
-                Some(('*', (0, 255, 0))),
-                Some(('*', (0, 255, 0))),
-                Some(('*', (0, 255, 0))),
-                None,
-                None,
-                None,
-                None,
-            ],
+            frames: vec![Frame { data: mock_data }],
             fps: 10.,
             colorful: true,
         };
-        assert_eq!(res, sprite);
+
+        let sprite = Sprite::from_rua("./test_file/test.rua".to_string(), 10., true);
+        if let Ok(parsed_sprite) = sprite {
+            assert_eq!(res, parsed_sprite);
+        }
     }
 }

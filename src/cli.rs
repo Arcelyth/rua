@@ -45,7 +45,7 @@ impl CLI {
     }
 
     fn handle_image(args: &Args) -> Result<(), Box<dyn Error>> {
-        let s = RuaSprite::from_img(args.path.clone(), args.width, 10.)?;
+        let s = Sprite::from_img(args.path.clone(), args.width, 10.)?;
         println!("{}", s.to_string(1));
         if let Some(n) = &args.output {
             if let Err(_) = s.output_rua(n.to_string()) {
@@ -56,7 +56,7 @@ impl CLI {
     }
 
     fn handle_rua(args: &Args) -> Result<(), Box<dyn Error>> {
-        let s = RuaSprite::from_rua(args.path.clone(), 10., true)?;
+        let s = Sprite::from_rua(args.path.clone(), 10., true)?;
         println!("{}", s.to_string(1));
         if let Some(n) = &args.output {
             if let Err(_) = s.output_rua(n.to_string()) {
