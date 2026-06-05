@@ -1,6 +1,6 @@
 [package]
 name = "rua-rs"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 repository = "https://github.com/Arcelyth/rua"
 homepage = "https://github.com/Arcelyth/rua"
@@ -11,3 +11,5 @@ keywords = ["image", "terminal", "sprite"]
 [dependencies]
 clap = { version = "4.5.56", features = ["derive"] }
 image = "0.25.9"
+serde = { version = "1.0", features = ["derive"] }
+postcard = { version = "1.1", features = ["alloc"] }

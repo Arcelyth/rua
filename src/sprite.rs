@@ -1,22 +1,23 @@
 //! # Rua-rs
 //! A file format engine handling multi-frame terminal sprite animations.
 
-use image::imageops::FilterType;
 use image::GenericImageView;
+use image::imageops::FilterType;
+use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::fmt::Write as FmtWrite;
 use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, Write as IoWrite};
 
 /// Represents a single character cell payload on the terminal screen matrix.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Pixel {
     pub ch: char,
     pub color: (u8, u8, u8),
 }
 
 /// A structured container enclosing a fully rendered animation frame buffer matrix.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Frame {
     pub data: Vec<Option<Pixel>>,
 }
@@ -29,7 +30,7 @@ pub struct Frame {
 ///
 /// Represents an ASCII art sprite animation format capable of managing multi-frame,
 /// colored character sequences with specific dimensions and playback speed.
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Sprite {
     width: u32,
     height: u32,
@@ -83,8 +84,11 @@ impl Sprite {
                 let r = rgb_pixel[0];
                 let g = rgb_pixel[1];
                 let b = rgb_pixel[2];
-                
-                data.push(Some(Pixel { ch: c, color: (r, g, b) }));
+
+                data.push(Some(Pixel {
+                    ch: c,
+                    color: (r, g, b),
+                }));
             }
         }
 
@@ -99,7 +103,7 @@ impl Sprite {
         })
     }
 
-    /// Parses an active configuration instance from custom structured token plaintext sequences safely.
+    /// Create a sprite structure from .rua file. 
     pub fn from_rua(path: String, fps: f64, colorful: bool) -> Result<Self, Box<dyn Error>> {
         let file = File::open(path)?;
         let mut reader = BufReader::new(file);
@@ -142,7 +146,10 @@ impl Sprite {
 
             if f_idx < frame_num && pos_x < width && pos_y < height {
                 let local_idx = (pos_y * width + pos_x) as usize;
-                frames[f_idx as usize].data[local_idx] = Some(Pixel { ch, color: (r, g, b) });
+                frames[f_idx as usize].data[local_idx] = Some(Pixel {
+                    ch,
+                    color: (r, g, b),
+                });
             }
         }
 
@@ -157,7 +164,15 @@ impl Sprite {
         })
     }
 
-    /// Serializes active instance configurations out into target output paths.
+    /// Create a sprite structure from .ruab (binary) file. 
+    pub fn from_ruab(path: String) -> Result<Self, Box<dyn Error>> {
+        let binary_data = std::fs::read(path)?;
+
+        let sprite: Sprite = postcard::from_bytes(&binary_data)?;
+        Ok(sprite)
+    }
+
+    /// Output as .rua file. 
     pub fn output_rua(&self, path: String) -> Result<(), Box<dyn Error>> {
         let file = File::create(path)?;
         let mut writer = BufWriter::new(file);
@@ -179,6 +194,14 @@ impl Sprite {
             }
         }
         writer.flush()?;
+        Ok(())
+    }
+
+    /// Output as .ruab (binary) file.
+    pub fn output_ruab(&self, path: String) -> Result<(), Box<dyn Error>> {
+        let binary_data = postcard::to_allocvec(self)?;
+        std::fs::write(path, binary_data)?;
+        
         Ok(())
     }
 
@@ -221,7 +244,7 @@ impl Sprite {
         }
         let removed = self.frames.remove(pos as usize);
         self.frame_num -= 1;
-        
+
         if self.current_frame >= self.frame_num && self.frame_num > 0 {
             self.current_frame = self.frame_num - 1;
         }
@@ -249,13 +272,13 @@ impl Sprite {
         for y in 0..self.height {
             for x in 0..self.width {
                 let idx = (y * self.width + x) as usize;
-                
+
                 if let Some(pixel) = &frame.data[idx] {
                     if self.colorful {
                         if current_color != Some(pixel.color) {
                             let _ = write!(
-                                out, 
-                                "\x1b[38;2;{};{};{}m", 
+                                out,
+                                "\x1b[38;2;{};{};{}m",
                                 pixel.color.0, pixel.color.1, pixel.color.2
                             );
                             current_color = Some(pixel.color);
@@ -292,12 +315,30 @@ mod tests {
     #[test]
     fn test_from_rua() {
         let mut mock_data = vec![None; 10];
-        mock_data[0] = Some(Pixel { ch: '*', color: (255, 0, 0) });
-        mock_data[1] = Some(Pixel { ch: '*', color: (255, 0, 0) });
-        mock_data[2] = Some(Pixel { ch: '*', color: (255, 0, 0) });
-        mock_data[3] = Some(Pixel { ch: '*', color: (0, 255, 0) });
-        mock_data[4] = Some(Pixel { ch: '*', color: (0, 255, 0) });
-        mock_data[5] = Some(Pixel { ch: '*', color: (0, 255, 0) });
+        mock_data[0] = Some(Pixel {
+            ch: '*',
+            color: (255, 0, 0),
+        });
+        mock_data[1] = Some(Pixel {
+            ch: '*',
+            color: (255, 0, 0),
+        });
+        mock_data[2] = Some(Pixel {
+            ch: '*',
+            color: (255, 0, 0),
+        });
+        mock_data[3] = Some(Pixel {
+            ch: '*',
+            color: (0, 255, 0),
+        });
+        mock_data[4] = Some(Pixel {
+            ch: '*',
+            color: (0, 255, 0),
+        });
+        mock_data[5] = Some(Pixel {
+            ch: '*',
+            color: (0, 255, 0),
+        });
 
         let res = Sprite {
             width: 10,
@@ -313,5 +354,29 @@ mod tests {
         if let Ok(parsed_sprite) = sprite {
             assert_eq!(res, parsed_sprite);
         }
+    }
+
+    #[test]
+    fn test_ruab() {
+        let mut mock_data = vec![None; 10];
+        mock_data[0] = Some(Pixel { ch: '*', color: (255, 0, 0) });
+        mock_data[1] = Some(Pixel { ch: '*', color: (255, 0, 0) });
+        mock_data[3] = Some(Pixel { ch: '*', color: (0, 255, 0) });
+        let sprite = Sprite {
+            width: 10,
+            height: 1,
+            frame_num: 1,
+            current_frame: 0,
+            frames: vec![Frame { data: mock_data }],
+            fps: 10.,
+            colorful: true,
+        };
+
+        let temp_path = "./test_file/temp.ruab".to_string();
+        let _ = std::fs::create_dir_all("./test_file/");
+        sprite.output_ruab(temp_path.clone()).expect("Failed to write binary file");
+        let loaded_sprite = Sprite::from_ruab(temp_path.clone()).expect("Failed to read binary file");
+        assert_eq!(sprite, loaded_sprite);
+        let _ = std::fs::remove_file(temp_path);
     }
 }
